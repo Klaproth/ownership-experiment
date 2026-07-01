@@ -2,9 +2,9 @@ import streamlit as st
 import random
 import math
 import io
+import zipfile
 from PIL import Image, ImageDraw, ImageFilter
 
-# --- The Generator Class (Same as before) ---
 class VisualSearchGenerator:
     def __init__(self, width=1000, height=800):
         self.width = width
@@ -116,9 +116,15 @@ class VisualSearchGenerator:
 # --- Streamlit UI ---
 st.set_page_config(page_title="Visual Search Stimulus Generator", layout="wide")
 st.title("Visual Search Stimulus Generator")
-st.write("Adjust the parameters in the sidebar and click **Generate** to create a new stimulus.")
+st.write("Adjust the parameters in the sidebar and click **Generate** to create your stimuli.")
 
-# Sidebar Parameters
+# Sidebar - Global Settings
+st.sidebar.header("Global Output Settings")
+num_images = st.sidebar.number_input("Number of Images to Generate", min_value=1, max_value=100, value=1)
+img_width = st.sidebar.number_input("Image Width (px)", min_value=500, max_value=3000, value=1000, step=100)
+img_height = st.sidebar.number_input("Image Height (px)", min_value=500, max_value=3000, value=800, step=100)
+
+# Sidebar - Item Parameters
 st.sidebar.header("Item Parameters")
 total_TL = st.sidebar.slider("Total T's and L's", 0, 100, 40)
 perc_L = st.sidebar.slider("Percentage of L's (Targets)", 0.0, 1.0, 0.25)
@@ -128,34 +134,67 @@ total_QO = st.sidebar.slider("Total Q's and O's", 0, 100, 40)
 perc_O = st.sidebar.slider("Percentage of O's (Targets)", 0.0, 1.0, 0.25)
 color_QO = st.sidebar.color_picker("Color of Q's and O's", "#0064FF")
 
+# Sidebar - Appearance
 st.sidebar.header("Appearance")
 size_min = st.sidebar.slider("Minimum Size", 10, 50, 25)
 size_max = st.sidebar.slider("Maximum Size", size_min, 80, 40)
 stroke_width = st.sidebar.slider("Stroke Width", 1, 10, 4)
 target_on_patch_prob = st.sidebar.slider("Target on Dark Patch Prob.", 0.0, 1.0, 0.85)
 
-# Generation button
-if st.sidebar.button("Generate Stimulus", type="primary"):
-    with st.spinner("Generating..."):
-        generator = VisualSearchGenerator(width=1000, height=800)
-        img = generator.generate_stimulus(
-            total_TL=total_TL, perc_L=perc_L, color_TL=color_TL,
-            total_QO=total_QO, perc_O=perc_O, color_QO=color_QO,
-            size_min=size_min, size_max=size_max, stroke_width=stroke_width,
-            target_on_patch_prob=target_on_patch_prob
-        )
-        
-        # Display the image
-        st.image(img, caption="Generated Stimulus", use_container_width=True)
-        
-        # Convert image to bytes for the download button
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG")
-        byte_im = buf.getvalue()
-        
-        st.download_button(
-            label="Download Image",
-            data=byte_im,
-            file_name="visual_search_stimulus.jpg",
-            mime="image/jpeg"
-        )
+# Generation button logic
+if st.sidebar.button("Generate Stimuli", type="primary"):
+    generator = VisualSearchGenerator(width=img_width, height=img_height)
+    
+    # Logic for a single image
+    if num_images == 1:
+        with st.spinner("Generating image..."):
+            img = generator.generate_stimulus(
+                total_TL=total_TL, perc_L=perc_L, color_TL=color_TL,
+                total_QO=total_QO, perc_O=perc_O, color_QO=color_QO,
+                size_min=size_min, size_max=size_max, stroke_width=stroke_width,
+                target_on_patch_prob=target_on_patch_prob
+            )
+            
+            st.image(img, caption="Generated Stimulus", use_container_width=True)
+            
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG")
+            byte_im = buf.getvalue()
+            
+            st.download_button(
+                label="Download Image",
+                data=byte_im,
+                file_name="visual_search_stimulus.jpg",
+                mime="image/jpeg"
+            )
+            
+    # Logic for batch generation (ZIP file)
+    else:
+        with st.spinner(f"Generating batch of {num_images} images..."):
+            zip_buffer = io.BytesIO()
+            
+            with zipfile.ZipFile(zip_buffer, "w") as zip_file:
+                for i in range(num_images):
+                    img = generator.generate_stimulus(
+                        total_TL=total_TL, perc_L=perc_L, color_TL=color_TL,
+                        total_QO=total_QO, perc_O=perc_O, color_QO=color_QO,
+                        size_min=size_min, size_max=size_max, stroke_width=stroke_width,
+                        target_on_patch_prob=target_on_patch_prob
+                    )
+                    
+                    img_buffer = io.BytesIO()
+                    img.save(img_buffer, format="JPEG")
+                    
+                    # Write the image to the zip archive
+                    zip_file.writestr(f"stimulus_{i+1:03d}.jpg", img_buffer.getvalue())
+            
+            # Show the final image generated as a preview
+            st.image(img, caption=f"Preview (Image {num_images} of {num_images})", use_container_width=True)
+            st.success(f"Successfully generated {num_images} stimuli!")
+            
+            st.download_button(
+                label=f"Download All {num_images} Images (ZIP)",
+                data=zip_buffer.getvalue(),
+                file_name="visual_search_batch.zip",
+                mime="application/zip"
+            )

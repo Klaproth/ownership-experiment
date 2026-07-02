@@ -59,7 +59,7 @@ class VisualSearchGenerator:
 
         return img
 
-    def generate_stimulus(self, total_TL, perc_L, color_TL, total_QO, perc_O, color_QO, 
+    def generate_stimulus(self, total_TL, perc_L, color_T, color_L, total_QO, perc_O, color_Q, color_O, 
                           size_min, size_max, stroke_width, target_on_patch_prob, 
                           rotations=[0, 90, 180, 270], min_distance=50):
         
@@ -71,10 +71,10 @@ class VisualSearchGenerator:
         num_Q = total_QO - num_O
 
         items_to_draw = []
-        items_to_draw.extend([('L', color_TL, True)] * num_L)
-        items_to_draw.extend([('O', color_QO, True)] * num_O)
-        items_to_draw.extend([('T', color_TL, False)] * num_T)
-        items_to_draw.extend([('Q', color_QO, False)] * num_Q)
+        items_to_draw.extend([('L', color_L, True)] * num_L)
+        items_to_draw.extend([('O', color_O, True)] * num_O)
+        items_to_draw.extend([('T', color_T, False)] * num_T)
+        items_to_draw.extend([('Q', color_Q, False)] * num_Q)
         random.shuffle(items_to_draw)
 
         locations = []
@@ -128,17 +128,23 @@ img_height = st.sidebar.number_input("Image Height (px)", min_value=500, max_val
 st.sidebar.header("Item Parameters")
 total_TL = st.sidebar.slider("Total T's and L's", 0, 100, 40)
 perc_L = st.sidebar.slider("Percentage of L's (Targets)", 0.0, 1.0, 0.25)
-color_TL = st.sidebar.color_picker("Color of T's and L's", "#FF8C00")
 
 total_QO = st.sidebar.slider("Total Q's and O's", 0, 100, 40)
 perc_O = st.sidebar.slider("Percentage of O's (Targets)", 0.0, 1.0, 0.25)
-color_QO = st.sidebar.color_picker("Color of Q's and O's", "#0064FF")
 
-# Sidebar - Appearance
-st.sidebar.header("Appearance")
+# Sidebar - Colors
+st.sidebar.header("Shape Colors")
+color_O = st.sidebar.color_picker("Color of O's", "#FF8C00") # Orange default
+color_Q = st.sidebar.color_picker("Color of Q's", "#FF8C00") # Orange default
+color_L = st.sidebar.color_picker("Color of L's", "#0064FF") # Blue default
+color_T = st.sidebar.color_picker("Color of T's", "#0064FF") # Blue default
+
+# Sidebar - Appearance & Layout
+st.sidebar.header("Appearance & Layout")
 size_min = st.sidebar.slider("Minimum Size", 10, 50, 25)
 size_max = st.sidebar.slider("Maximum Size", size_min, 80, 40)
 stroke_width = st.sidebar.slider("Stroke Width", 1, 10, 4)
+min_distance = st.sidebar.slider("Minimum Distance Between Shapes", 10, 150, 50)
 target_on_patch_prob = st.sidebar.slider("Target on Dark Patch Prob.", 0.0, 1.0, 0.85)
 
 # Generation button logic
@@ -149,10 +155,10 @@ if st.sidebar.button("Generate Stimuli", type="primary"):
     if num_images == 1:
         with st.spinner("Generating image..."):
             img = generator.generate_stimulus(
-                total_TL=total_TL, perc_L=perc_L, color_TL=color_TL,
-                total_QO=total_QO, perc_O=perc_O, color_QO=color_QO,
+                total_TL=total_TL, perc_L=perc_L, color_T=color_T, color_L=color_L,
+                total_QO=total_QO, perc_O=perc_O, color_Q=color_Q, color_O=color_O,
                 size_min=size_min, size_max=size_max, stroke_width=stroke_width,
-                target_on_patch_prob=target_on_patch_prob
+                target_on_patch_prob=target_on_patch_prob, min_distance=min_distance
             )
             
             st.image(img, caption="Generated Stimulus", use_container_width=True)
@@ -176,10 +182,10 @@ if st.sidebar.button("Generate Stimuli", type="primary"):
             with zipfile.ZipFile(zip_buffer, "w") as zip_file:
                 for i in range(num_images):
                     img = generator.generate_stimulus(
-                        total_TL=total_TL, perc_L=perc_L, color_TL=color_TL,
-                        total_QO=total_QO, perc_O=perc_O, color_QO=color_QO,
+                        total_TL=total_TL, perc_L=perc_L, color_T=color_T, color_L=color_L,
+                        total_QO=total_QO, perc_O=perc_O, color_Q=color_Q, color_O=color_O,
                         size_min=size_min, size_max=size_max, stroke_width=stroke_width,
-                        target_on_patch_prob=target_on_patch_prob
+                        target_on_patch_prob=target_on_patch_prob, min_distance=min_distance
                     )
                     
                     img_buffer = io.BytesIO()

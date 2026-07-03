@@ -3,6 +3,7 @@ import random
 import math
 import io
 import zipfile
+import csv
 from PIL import Image, ImageDraw, ImageFilter
 
 class VisualSearchGenerator:
@@ -80,6 +81,7 @@ class VisualSearchGenerator:
         locations = []
         max_attempts = 1000
         
+        # Calculate Valid Coordinates
         for shape, color, is_target in items_to_draw:
             placed = False
             attempts = 0
@@ -102,21 +104,51 @@ class VisualSearchGenerator:
                     placed = True
                 attempts += 1
 
+        # Render items and collect ground-truth metadata
+        metadata = []
         for (shape, color, _), (x, y) in zip(items_to_draw, locations):
             size = random.randint(size_min, size_max)
             angle = random.choice(rotations)
+            
+            # 1. Sample Background Luminance (0 = black, 255 = white) at the exact center (x, y)
+            r, g, b, a = img.getpixel((x, y))
+            bg_luminance = int(0.299 * r + 0.587 * g + 0.114 * b)
+            
+            # 2. Save metadata for the CSV
+            metadata.append({
+                "shape": shape,
+                "center_x": x,
+                "center_y": y,
+                "color_hex": color,
+                "size_px": size,
+                "rotation_deg": angle,
+                "bg_luminance": bg_luminance
+            })
+            
+            # 3. Draw and rotate
             shape_img = self._draw_shape(shape, size, color, stroke_width)
             rotated_shape = shape_img.rotate(angle, expand=1, resample=Image.Resampling.BICUBIC)
             
+            # 4. Paste centered on (x,y)
             paste_x, paste_y = int(x - rotated_shape.width / 2), int(y - rotated_shape.height / 2)
             img.paste(rotated_shape, (paste_x, paste_y), rotated_shape)
 
-        return img.convert('RGB')
+        return img.convert('RGB'), metadata
+
+def create_csv_string(metadata):
+    """Helper function to convert metadata list of dicts to a CSV string."""
+    output = io.StringIO()
+    if len(metadata) > 0:
+        writer = csv.DictWriter(output, fieldnames=metadata[0].keys())
+        writer.writeheader()
+        writer.writerows(metadata)
+    return output.getvalue()
+
 
 # --- Streamlit UI ---
 st.set_page_config(page_title="Visual Search Stimulus Generator", layout="wide")
 st.title("Visual Search Stimulus Generator")
-st.write("Adjust the parameters in the sidebar and click **Generate** to create your stimuli.")
+st.write("Adjust the parameters and click **Generate** to create your stimuli and coordinate data.")
 
 # Sidebar - Global Settings
 st.sidebar.header("Global Output Settings")
@@ -134,10 +166,10 @@ perc_O = st.sidebar.slider("Percentage of O's (Targets)", 0.0, 1.0, 0.25)
 
 # Sidebar - Colors
 st.sidebar.header("Shape Colors")
-color_O = st.sidebar.color_picker("Color of O's", "#FF8C00") # Orange default
-color_Q = st.sidebar.color_picker("Color of Q's", "#FF8C00") # Orange default
-color_L = st.sidebar.color_picker("Color of L's", "#0064FF") # Blue default
-color_T = st.sidebar.color_picker("Color of T's", "#0064FF") # Blue default
+color_O = st.sidebar.color_picker("Color of O's", "#FF8C00")
+color_Q = st.sidebar.color_picker("Color of Q's", "#FF8C00")
+color_L = st.sidebar.color_picker("Color of L's", "#0064FF")
+color_T = st.sidebar.color_picker("Color of T's", "#0064FF")
 
 # Sidebar - Appearance & Layout
 st.sidebar.header("Appearance & Layout")
@@ -151,10 +183,10 @@ target_on_patch_prob = st.sidebar.slider("Target on Dark Patch Prob.", 0.0, 1.0,
 if st.sidebar.button("Generate Stimuli", type="primary"):
     generator = VisualSearchGenerator(width=img_width, height=img_height)
     
-    # Logic for a single image
+    # Logic for a SINGLE image + csv
     if num_images == 1:
-        with st.spinner("Generating image..."):
-            img = generator.generate_stimulus(
+        with st.spinner("Generating image and coordinate data..."):
+            img, metadata = generator.generate_stimulus(
                 total_TL=total_TL, perc_L=perc_L, color_T=color_T, color_L=color_L,
                 total_QO=total_QO, perc_O=perc_O, color_Q=color_Q, color_O=color_O,
                 size_min=size_min, size_max=size_max, stroke_width=stroke_width,
@@ -163,44 +195,67 @@ if st.sidebar.button("Generate Stimuli", type="primary"):
             
             st.image(img, caption="Generated Stimulus", use_container_width=True)
             
-            buf = io.BytesIO()
-            img.save(buf, format="JPEG")
-            byte_im = buf.getvalue()
+            # Prepare Image Bytes
+            img_buf = io.BytesIO()
+            img.save(img_buf, format="JPEG")
+            byte_im = img_buf.getvalue()
             
-            st.download_button(
-                label="Download Image",
-                data=byte_im,
-                file_name="visual_search_stimulus.jpg",
-                mime="image/jpeg"
-            )
+            # Prepare CSV Bytes
+            csv_str = create_csv_string(metadata)
             
-    # Logic for batch generation (ZIP file)
+            # Create two side-by-side buttons
+            col1, col2 = st.columns(2)
+            with col1:
+                st.download_button(
+                    label="Download Image (.jpg)",
+                    data=byte_im,
+                    file_name="stimulus_001.jpg",
+                    mime="image/jpeg",
+                    use_container_width=True
+                )
+            with col2:
+                st.download_button(
+                    label="Download Coordinate Data (.csv)",
+                    data=csv_str,
+                    file_name="stimulus_001.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            
+    # Logic for BATCH generation (ZIP file containing JPGs and CSVs)
     else:
-        with st.spinner(f"Generating batch of {num_images} images..."):
+        with st.spinner(f"Generating batch of {num_images} images and data files..."):
             zip_buffer = io.BytesIO()
             
             with zipfile.ZipFile(zip_buffer, "w") as zip_file:
                 for i in range(num_images):
-                    img = generator.generate_stimulus(
+                    # 1. Generate image and metadata
+                    img, metadata = generator.generate_stimulus(
                         total_TL=total_TL, perc_L=perc_L, color_T=color_T, color_L=color_L,
                         total_QO=total_QO, perc_O=perc_O, color_Q=color_Q, color_O=color_O,
                         size_min=size_min, size_max=size_max, stroke_width=stroke_width,
                         target_on_patch_prob=target_on_patch_prob, min_distance=min_distance
                     )
                     
+                    # 2. Write Image to ZIP
                     img_buffer = io.BytesIO()
                     img.save(img_buffer, format="JPEG")
+                    img_filename = f"stimulus_{i+1:03d}.jpg"
+                    zip_file.writestr(img_filename, img_buffer.getvalue())
                     
-                    # Write the image to the zip archive
-                    zip_file.writestr(f"stimulus_{i+1:03d}.jpg", img_buffer.getvalue())
+                    # 3. Write CSV to ZIP
+                    csv_str = create_csv_string(metadata)
+                    csv_filename = f"stimulus_{i+1:03d}.csv"
+                    zip_file.writestr(csv_filename, csv_str)
             
             # Show the final image generated as a preview
             st.image(img, caption=f"Preview (Image {num_images} of {num_images})", use_container_width=True)
-            st.success(f"Successfully generated {num_images} stimuli!")
+            st.success(f"Successfully generated {num_images} images and {num_images} CSV files!")
             
             st.download_button(
-                label=f"Download All {num_images} Images (ZIP)",
+                label=f"Download Archive (.zip)",
                 data=zip_buffer.getvalue(),
                 file_name="visual_search_batch.zip",
-                mime="application/zip"
+                mime="application/zip",
+                use_container_width=True
             )

@@ -12,22 +12,20 @@ class VisualSearchGenerator:
         self.height = height
 
     def _generate_background(self, grain_intensity=35, dark_patch_prob=0.3):
-        """Generates a fractal noise background with controllable dark patch frequency."""
         w_base = max(1, self.width // 120)
         h_base = max(1, self.height // 120)
         
-        # Octave 1: Macro structure
+        # Octave 1
         grid1 = Image.new('L', (w_base, h_base))
         pixels1 = grid1.load()
         for x in range(w_base):
             for y in range(h_base):
-                # Use the new probability parameter to decide if this node is dark or light
                 if random.random() < dark_patch_prob:
-                    pixels1[x, y] = random.randint(30, 90) # Deep darks
+                    pixels1[x, y] = random.randint(30, 90)
                 else:
-                    pixels1[x, y] = random.randint(150, 240) # Bright lights
+                    pixels1[x, y] = random.randint(150, 240)
                 
-        # Octave 2: Micro structure
+        # Octave 2
         grid2 = Image.new('L', (w_base * 2, h_base * 2))
         pixels2 = grid2.load()
         for x in range(w_base * 2):
@@ -37,27 +35,20 @@ class VisualSearchGenerator:
                 else:
                     pixels2[x, y] = random.randint(140, 230)
                 
-        # Scale both up using Bicubic interpolation
         img1 = grid1.resize((self.width, self.height), Image.Resampling.BICUBIC)
         img2 = grid2.resize((self.width, self.height), Image.Resampling.BICUBIC)
         
-        # Blend them together
         smooth_bg = Image.blend(img1, img2, alpha=0.4)
-        
-        # Heavy blur to melt the nodes into a seamless texture
         smooth_bg = smooth_bg.filter(ImageFilter.GaussianBlur(radius=40))
         
-        # Aggressively stretch the contrast to pull the darks and lights apart
         contrast_enhancer = ImageEnhance.Contrast(smooth_bg)
         smooth_bg = contrast_enhancer.enhance(1.8) 
         
-        # Lift the overall brightness so the non-dark fields become significantly lighter
         brightness_enhancer = ImageEnhance.Brightness(smooth_bg)
         smooth_bg = brightness_enhancer.enhance(1.25)
         
         bg_rgba = smooth_bg.convert('RGBA')
         
-        # Generate high-frequency uniform grain
         grain_img = Image.new('RGBA', (self.width, self.height))
         grain_pixels = grain_img.load()
         for x in range(self.width):
@@ -65,7 +56,6 @@ class VisualSearchGenerator:
                 noise = random.randint(-grain_intensity, grain_intensity)
                 grain_pixels[x, y] = (noise, noise, noise, 60) 
                 
-        # Composite grain over the smooth clouds
         final_bg = Image.alpha_composite(bg_rgba, grain_img)
         
         return final_bg, smooth_bg
@@ -174,6 +164,7 @@ class VisualSearchGenerator:
             r, g, b, a = img.getpixel((x, y))
             bg_luminance = int(0.299 * r + 0.587 * g + 0.114 * b)
             
+            # Record the metadata
             metadata.append({
                 "shape": shape,
                 "center_x": x,
@@ -181,12 +172,14 @@ class VisualSearchGenerator:
                 "color_hex": color,
                 "size_px": size,
                 "is_small": (size == size_small),
-                "rotation_deg": angle,
-                "bg_luminance": bg_luminance
+                "rotation": angle, # Extracted as the exact degree
+                "bg_luminance": bg_luminance,
+                "bg_dark": bool(bg_luminance <= dark_threshold) # Boolean based on exact threshold logic
             })
             
             shape_img = self._draw_shape(shape, size, color, stroke_width)
-            rotated_shape = shape_img.rotate(angle, expand=1, resample=Image.Resampling.BICUBIC)
+            # Use negative angle so it rotates clockwise visually, matching the CSV value
+            rotated_shape = shape_img.rotate(-angle, expand=1, resample=Image.Resampling.BICUBIC)
             
             paste_x, paste_y = int(x - rotated_shape.width / 2), int(y - rotated_shape.height / 2)
             img.paste(rotated_shape, (paste_x, paste_y), rotated_shape)
@@ -217,7 +210,6 @@ stroke_width = st.sidebar.slider("Stroke Width", 1, 10, 4)
 min_distance = st.sidebar.slider("Min Distance Between Shapes", 10, 150, 50)
 
 st.sidebar.header("3. Background Dynamics")
-# NEW SLIDER HERE
 dark_patch_prob = st.sidebar.slider("Frequency of Dark Patches", 0.05, 0.95, 0.25, 
                                     help="Controls how many dark clouds form. Lower values mean fewer, more isolated patches.")
 target_on_patch_prob = st.sidebar.slider("Target on Dark Patch Prob.", 0.0, 1.0, 0.85)
